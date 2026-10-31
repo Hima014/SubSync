@@ -1,27 +1,26 @@
-import type { Metadata } from 'next';
-import './globals.css';
-import { ToastProvider } from '@/components/ToastProvider';
-import { AppShell } from '@/components/AppShell';
+import type { Metadata } from "next";
+import "./globals.css";
+import { AppShell } from "@/components/layout/app-shell";
+import { AppProvider } from "@/context/app-context";
 
 export const metadata: Metadata = {
-  title: 'SUBSYNC — Every Subscription in Sync. Every Billing Action Protected.',
+  title: "SUBSYNC — Subscription Management & Billing Integrity Platform",
   description:
-    'Subscription and Billing Management Platform with built-in Billing Integrity Guard and What-If Simulator.',
+    "Intelligent subscription management platform featuring the Billing Integrity Guard, transparent Invoice Passport, and real-time Billing Simulator.",
 };
 
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode;
-}>) {
+}) {
   return (
     <html lang="en">
-      <body className="bg-[#070b12] text-slate-100 antialiased selection:bg-emerald-500/30 selection:text-emerald-200">
-        <ToastProvider>
+      <body className="font-sans antialiased bg-ivory text-charcoal">
+        <AppProvider>
           <AppShell>{children}</AppShell>
-        </ToastProvider>
+        </AppProvider>
       </body>
     </html>
   );
 }
-

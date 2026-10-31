@@ -1,223 +1,330 @@
-'use client';
+"use client";
 
-import React, { useState, useEffect } from 'react';
-import {
-  Settings,
-  Building2,
-  Database,
-  RotateCcw,
-  ShieldCheck,
-  CheckCircle2,
-  Save,
-  Lock,
-} from 'lucide-react';
-import { getOrganization, updateOrganization, resetDemoData } from '@/lib/repository';
-import { Organization, Currency } from '@/types';
-import { useToast } from '@/components/ToastProvider';
+import React, { useState } from "react";
+import { useApp } from "@/context/app-context";
+import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import { SystemSettings } from "@/types";
+
+function SettingsSection({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+        <CardDescription>{description}</CardDescription>
+      </CardHeader>
+      <CardContent>{children}</CardContent>
+    </Card>
+  );
+}
 
 export default function SettingsPage() {
-  const { addToast } = useToast();
-  const [org, setOrg] = useState<Organization | null>(null);
-  const [name, setName] = useState('');
-  const [currency, setCurrency] = useState<Currency>('USD');
-  const [taxRatePercent, setTaxRatePercent] = useState<number>(10);
-  const [taxIdentifier, setTaxIdentifier] = useState('');
-  const [isSaving, setIsSaving] = useState(false);
+  const { settings, updateSettings, resetToMockData } = useApp();
 
-  useEffect(() => {
-    getOrganization().then((res) => {
-      setOrg(res);
-      setName(res.name);
-      setCurrency(res.currency);
-      setTaxRatePercent(res.taxRatePercent);
-      setTaxIdentifier(res.taxIdentifier || '');
-    });
-  }, []);
+  // Local form state — only persisted on Save
+  const [form, setForm] = useState<SystemSettings>({ ...settings });
+  const [saved, setSaved] = useState(false);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [resetDone, setResetDone] = useState(false);
 
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSaving(true);
-    try {
-      const updated = await updateOrganization({
-        name,
-        currency,
-        taxRatePercent,
-        taxIdentifier,
-      });
-      setOrg(updated);
-      addToast({
-        type: 'success',
-        title: 'Settings Saved',
-        message: 'Organization configuration updated successfully.',
-      });
-    } catch (e: any) {
-      addToast({ type: 'error', title: 'Save Failed', message: e.message });
-    } finally {
-      setIsSaving(false);
-    }
+  const handleChange = (field: keyof SystemSettings, value: string | number) => {
+    setForm((prev) => ({ ...prev, [field]: value }));
+    setSaved(false);
   };
 
-  const handleResetData = () => {
-    if (confirm('Reset demo workspace back to pristine seed records? All test subscriptions, duplicate billing scenarios, and invoices will be restored.')) {
-      resetDemoData();
-      addToast({
-        type: 'info',
-        title: 'Demo Workspace Restored',
-        message: 'Pristine customers, subscriptions, and duplicate billing test cases reloaded.',
-      });
-      setTimeout(() => {
-        window.location.reload();
-      }, 400);
-    }
+  const handleSave = () => {
+    updateSettings(form);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 3000);
   };
+
+  const handleReset = () => {
+    resetToMockData();
+    setShowResetConfirm(false);
+    setResetDone(true);
+    setTimeout(() => setResetDone(false), 4000);
+    // Reset local form too
+    setForm({ ...settings });
+  };
+
+  const isDirty = JSON.stringify(form) !== JSON.stringify(settings);
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-300 max-w-4xl">
+    <div className="space-y-8">
       {/* Header */}
-      <div className="pb-4 border-b border-slate-800">
-        <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
-          Organization & System Settings
-        </h1>
-        <p className="text-xs text-slate-400 mt-1">
-          Configure organization profile, default financial boundaries, and inspect architecture persistence.
-        </p>
-      </div>
-
-      {/* Organization Profile Form */}
-      <div className="bg-[#0e1524] border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
-        <h2 className="text-sm font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
-          <Building2 className="w-4 h-4 text-emerald-400" />
-          Organization Profile & Tax Parameters
-        </h2>
-
-        <form onSubmit={handleSave} className="space-y-4 text-xs">
-          <div>
-            <label className="block font-semibold text-slate-400 mb-1">
-              Organization Legal Name
-            </label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-              className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-medium"
-            />
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block font-semibold text-slate-400 mb-1">
-                Default Currency
-              </label>
-              <select
-                value={currency}
-                onChange={(e) => setCurrency(e.target.value as Currency)}
-                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
-              >
-                <option value="USD">USD ($) — United States Dollar</option>
-                <option value="EUR">EUR (€) — Euro</option>
-                <option value="GBP">GBP (£) — British Pound</option>
-                <option value="INR">INR (₹) — Indian Rupee</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block font-semibold text-slate-400 mb-1">
-                Default Tax Rate (%)
-              </label>
-              <input
-                type="number"
-                min="0"
-                value={taxRatePercent}
-                onChange={(e) => setTaxRatePercent(parseFloat(e.target.value) || 0)}
-                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block font-semibold text-slate-400 mb-1">
-              Company Tax ID / EIN / VAT Identifier
-            </label>
-            <input
-              type="text"
-              value={taxIdentifier}
-              onChange={(e) => setTaxIdentifier(e.target.value)}
-              placeholder="e.g. US-EIN-94-3829104"
-              className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono"
-            />
-          </div>
-
-          <div className="pt-4 flex justify-end">
-            <button
-              type="submit"
-              disabled={isSaving}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold text-xs transition-colors shadow-lg shadow-emerald-500/20"
-            >
-              <Save className="w-3.5 h-3.5" />
-              <span>{isSaving ? 'Saving...' : 'Save Configuration'}</span>
-            </button>
-          </div>
-        </form>
-      </div>
-
-      {/* Architecture & Persistence Strategy */}
-      <div className="bg-[#0e1524] border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
-        <h2 className="text-sm font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
-          <Database className="w-4 h-4 text-sky-400" />
-          Persistence Architecture & Boundaries
-        </h2>
-
-        <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 space-y-3 text-xs">
-          <div className="flex items-center justify-between">
-            <span className="font-semibold text-white">Active Persistence Mode:</span>
-            <span className="px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-[11px] font-bold">
-              Protected Local Demo Store
-            </span>
-          </div>
-
-          <p className="text-slate-400 leading-relaxed">
-            SUBSYNC implements a strict repository service layer separating the UI from data persistence.
-            In Demo Mode, realistic sample records are maintained in browser localStorage and memory with zero risk of external credential leakage.
-          </p>
-
-          <div className="pt-2 border-t border-slate-800/80 space-y-2 text-slate-400">
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-              <span>Integer Minor-Unit Math: All monetary calculations are performed in integer cents/paise.</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-              <span>Supabase-Ready Repository: Repository interfaces map 1:1 to PostgreSQL tables & RLS policies.</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-              <span>Zero Leakage: No external secret keys are required or exposed to client bundles.</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Reset Demo Data Card */}
-      <div className="bg-rose-950/10 border border-rose-500/30 rounded-2xl p-6 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h3 className="font-bold text-white text-sm flex items-center gap-2">
-            <RotateCcw className="w-4 h-4 text-rose-400" />
-            Reset Demo Workspace
-          </h3>
-          <p className="text-xs text-slate-400 mt-1">
-            Restores the 5 customers, 4 plans, 6 subscriptions, and preloaded duplicate billing test scenario back to pristine seed states.
+          <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-ivory-200 border border-border text-[10px] font-bold uppercase tracking-wider text-charcoal mb-1">
+            <span>System Configuration</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-gold" />
+            <span>Persisted to LocalStorage</span>
+          </div>
+          <h2 className="text-xl lg:text-2xl font-bold tracking-tight text-charcoal">Settings</h2>
+          <p className="text-xs text-charcoal-soft mt-0.5">
+            Business profile, currency, tax configuration, and application preferences
           </p>
         </div>
+        <div className="flex items-center gap-3">
+          {isDirty && (
+            <span className="text-xs text-amber-600 font-semibold">Unsaved changes</span>
+          )}
+          <Button
+            variant="gold"
+            size="sm"
+            onClick={handleSave}
+            disabled={!isDirty}
+          >
+            {saved ? "✓ Saved" : "Save Changes"}
+          </Button>
+        </div>
+      </div>
 
-        <button
-          onClick={handleResetData}
-          className="px-4 py-2 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 font-semibold text-xs border border-rose-500/40 transition-colors shrink-0"
+      {/* Save success toast */}
+      {saved && (
+        <div className="flex items-center gap-3 p-3 rounded-xl bg-integrity-passed-bg border border-integrity-passed-border text-xs">
+          <svg className="w-4 h-4 text-integrity-passed shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          </svg>
+          <span className="font-semibold text-integrity-passed">Settings saved successfully.</span>
+          <span className="text-charcoal-soft">Changes are persisted to browser localStorage.</span>
+        </div>
+      )}
+
+      {/* Reset success toast */}
+      {resetDone && (
+        <div className="flex items-center gap-3 p-3 rounded-xl bg-integrity-warning-bg border border-integrity-warning-border text-xs">
+          <svg className="w-4 h-4 text-amber-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+          <span className="font-semibold text-amber-700">Application reset to demo data.</span>
+          <span className="text-charcoal-soft">All customers, subscriptions and invoices restored to original mock data.</span>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+        {/* Business Profile */}
+        <SettingsSection
+          title="Business Profile"
+          description="Your organization's registered details used on invoices"
         >
-          Reset Demo Data
-        </button>
+          <div className="space-y-4">
+            <Input
+              label="Business Name"
+              value={form.businessName}
+              onChange={(e) => handleChange("businessName", e.target.value)}
+              placeholder="e.g. Acme Technologies Pvt Ltd"
+            />
+            <Input
+              label="Business Address"
+              value={form.businessAddress}
+              onChange={(e) => handleChange("businessAddress", e.target.value)}
+              placeholder="e.g. 42 MG Road, Bangalore – 560001"
+            />
+            <Input
+              label="GSTIN"
+              value={form.gstin}
+              onChange={(e) => handleChange("gstin", e.target.value)}
+              placeholder="e.g. 29AABCU9603R1ZM"
+              helperText="15-character GST Identification Number"
+            />
+            <Input
+              label="Support Email"
+              type="email"
+              value={form.supportEmail}
+              onChange={(e) => handleChange("supportEmail", e.target.value)}
+              placeholder="e.g. billing@acme.com"
+            />
+          </div>
+        </SettingsSection>
+
+        {/* Currency & Tax */}
+        <div className="space-y-6">
+          <SettingsSection
+            title="Currency"
+            description="Default currency for all billing calculations and invoices"
+          >
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <Input
+                  label="Currency Code"
+                  value={form.currency}
+                  onChange={(e) => handleChange("currency", e.target.value)}
+                  placeholder="INR"
+                  helperText="ISO 4217 code"
+                />
+                <Input
+                  label="Currency Symbol"
+                  value={form.currencySymbol}
+                  onChange={(e) => handleChange("currencySymbol", e.target.value)}
+                  placeholder="₹"
+                />
+              </div>
+              <div className="p-3 rounded-lg bg-ivory-200 border border-border text-xs text-charcoal-soft">
+                Preview:{" "}
+                <span className="font-mono font-bold text-charcoal">
+                  {form.currencySymbol}1,00,000.00 {form.currency}
+                </span>
+              </div>
+            </div>
+          </SettingsSection>
+
+          <SettingsSection
+            title="Tax Configuration"
+            description="Default GST rate applied when billing calculations are run"
+          >
+            <div className="space-y-4">
+              <Select
+                label="Default GST Rate"
+                value={form.defaultGstRate.toString()}
+                onChange={(e) => handleChange("defaultGstRate", parseFloat(e.target.value))}
+                options={[
+                  { value: "18", label: "18% — Standard Rate (Goods & Services)" },
+                  { value: "12", label: "12% — Reduced Rate" },
+                  { value: "5", label: "5% — Essential Services" },
+                  { value: "0", label: "0% — Tax Exempt" },
+                ]}
+                helperText="Applied as CGST + SGST split equally"
+              />
+              <div className="p-3 rounded-lg bg-ivory-200 border border-border text-xs space-y-1">
+                <div className="flex justify-between">
+                  <span className="text-charcoal-soft">CGST rate</span>
+                  <span className="font-mono font-semibold text-charcoal">{form.defaultGstRate / 2}%</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-charcoal-soft">SGST rate</span>
+                  <span className="font-mono font-semibold text-charcoal">{form.defaultGstRate / 2}%</span>
+                </div>
+                <div className="flex justify-between border-t border-border pt-1">
+                  <span className="text-charcoal-soft font-semibold">Combined GST</span>
+                  <span className="font-mono font-bold text-charcoal">{form.defaultGstRate}%</span>
+                </div>
+              </div>
+            </div>
+          </SettingsSection>
+        </div>
+
+        {/* Billing Integrity */}
+        <SettingsSection
+          title="Billing Integrity Guard"
+          description="Controls how the Guard handles validation severity thresholds"
+        >
+          <div className="space-y-4">
+            <Select
+              label="Integrity Strictness"
+              value={form.integrityStrictness}
+              onChange={(e) =>
+                handleChange("integrityStrictness", e.target.value as SystemSettings["integrityStrictness"])
+              }
+              options={[
+                { value: "Standard", label: "Standard — Block Critical, Warn on Warning" },
+                { value: "Strict", label: "Strict — Block on Warning and Critical" },
+                { value: "Lenient", label: "Lenient — Block on Critical only (ignore Warnings)" },
+              ]}
+              helperText="Strict mode blocks invoice generation even for Warning-level issues"
+            />
+
+            <div className="space-y-2">
+              {[
+                { mode: "Standard", desc: "Critical errors block invoice. Warnings shown but allow generation.", badge: "warning" as const },
+                { mode: "Strict", desc: "Both Critical and Warning block invoice generation entirely.", badge: "critical" as const },
+                { mode: "Lenient", desc: "Only Critical errors block. Warnings are surfaced as informational only.", badge: "passed" as const },
+              ].map((opt) => (
+                <div
+                  key={opt.mode}
+                  className={`p-3 rounded-lg border text-xs transition-all cursor-pointer ${
+                    form.integrityStrictness === opt.mode
+                      ? "bg-gold/5 border-gold/30"
+                      : "bg-surface-muted border-border opacity-60"
+                  }`}
+                  onClick={() => handleChange("integrityStrictness", opt.mode)}
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <Badge variant={opt.badge}>{opt.mode}</Badge>
+                    {form.integrityStrictness === opt.mode && (
+                      <span className="text-gold font-bold text-[10px] uppercase tracking-wider">Active</span>
+                    )}
+                  </div>
+                  <p className="text-charcoal-soft">{opt.desc}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </SettingsSection>
+
+        {/* Danger Zone */}
+        <SettingsSection
+          title="Data Management"
+          description="Reset application state for demo and testing purposes"
+        >
+          <div className="space-y-4">
+            <div className="p-4 rounded-xl bg-integrity-critical-bg border border-integrity-critical-border">
+              <h4 className="text-sm font-bold text-integrity-critical mb-1">Reset to Demo Data</h4>
+              <p className="text-xs text-charcoal-soft leading-relaxed mb-3">
+                Clears all customers, subscriptions, invoices, and payments from localStorage and
+                restores the original mock data. This is irreversible. Use to reset the demo environment.
+              </p>
+
+              {!showResetConfirm ? (
+                <Button
+                  variant="danger"
+                  size="sm"
+                  onClick={() => setShowResetConfirm(true)}
+                >
+                  Reset to Mock Data
+                </Button>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-xs font-bold text-integrity-critical">
+                    ⚠ Are you sure? All data will be overwritten.
+                  </p>
+                  <div className="flex gap-2">
+                    <Button variant="secondary" size="sm" onClick={() => setShowResetConfirm(false)}>
+                      Cancel
+                    </Button>
+                    <Button variant="danger" size="sm" onClick={handleReset}>
+                      Yes, Reset Everything
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="p-3 rounded-lg bg-ivory-200 border border-border text-xs text-charcoal-soft leading-relaxed">
+              <strong className="text-charcoal">Storage:</strong> All application state is stored in your
+              browser&apos;s localStorage under the key{" "}
+              <code className="font-mono bg-border px-1 py-0.5 rounded text-[10px]">subsync_app_state_v1</code>.
+              No data is sent to any server.
+            </div>
+          </div>
+        </SettingsSection>
+      </div>
+
+      {/* Save footer */}
+      <div className="flex items-center justify-between p-4 rounded-xl bg-ivory-200 border border-border">
+        <div>
+          <div className="text-sm font-semibold text-charcoal">
+            {isDirty ? "You have unsaved changes" : "All settings are up to date"}
+          </div>
+          <div className="text-xs text-charcoal-soft mt-0.5">
+            Settings are applied immediately after saving and persist across sessions.
+          </div>
+        </div>
+        <Button variant="gold" onClick={handleSave} disabled={!isDirty}>
+          {saved ? "✓ Saved" : "Save All Changes"}
+        </Button>
       </div>
     </div>
   );
 }
-

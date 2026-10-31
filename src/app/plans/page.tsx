@@ -1,370 +1,324 @@
-'use client';
+"use client";
 
-import React, { useState, useEffect } from 'react';
-import {
-  CreditCard,
-  Plus,
-  Edit2,
-  Archive,
-  CheckCircle2,
-  Layers,
-  Sparkles,
-  DollarSign,
-  Percent,
-} from 'lucide-react';
-import { getPlans, getSubscriptions, createPlan, updatePlan } from '@/lib/repository';
-import { formatMinorUnits } from '@/lib/billing-engine';
-import { Plan, Currency, BillingInterval, Subscription } from '@/types';
-import { Modal } from '@/components/Modal';
-import { useToast } from '@/components/ToastProvider';
+import React, { useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useApp } from "@/context/app-context";
+import { Plan, BillingInterval } from "@/types";
+import { formatINR } from "@/lib/utils";
+import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Modal } from "@/components/ui/modal";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 
 export default function PlansPage() {
-  const { addToast } = useToast();
-  const [plans, setPlans] = useState<Plan[]>([]);
-  const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
-  const [loading, setLoading] = useState(true);
+  const router = useRouter();
+  const { plans, addPlan } = useApp();
 
-  // Modal State
+  const [intervalFilter, setIntervalFilter] = useState<"all" | "monthly" | "yearly">("all");
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingPlan, setEditingPlan] = useState<Plan | null>(null);
 
-  // Form Fields
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [priceMajor, setPriceMajor] = useState('49.00');
-  const [currency, setCurrency] = useState<Currency>('USD');
-  const [billingInterval, setBillingInterval] = useState<BillingInterval>('monthly');
-  const [taxRatePercent, setTaxRatePercent] = useState<number>(10);
-  const [isActive, setIsActive] = useState(true);
+  // New Plan Form State
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [billingInterval, setBillingInterval] = useState<BillingInterval>("monthly");
+  const [basePrice, setBasePrice] = useState("");
+  const [includedSeats, setIncludedSeats] = useState("5");
+  const [perAdditionalSeatPrice, setPerAdditionalSeatPrice] = useState("199");
+  const [maxSeats, setMaxSeats] = useState("25");
+  const [feature1, setFeature1] = useState("");
+  const [feature2, setFeature2] = useState("");
+  const [feature3, setFeature3] = useState("");
 
-  const loadData = async () => {
-    try {
-      const [pls, subs] = await Promise.all([getPlans(), getSubscriptions()]);
-      setPlans(pls);
-      setSubscriptions(subs);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const filteredPlans = plans.filter((p) => {
+    if (intervalFilter === "all") return true;
+    return p.billingInterval === intervalFilter;
+  });
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const openCreateModal = () => {
-    setEditingPlan(null);
-    setName('');
-    setDescription('');
-    setPriceMajor('49.00');
-    setCurrency('USD');
-    setBillingInterval('monthly');
-    setTaxRatePercent(10);
-    setIsActive(true);
-    setIsModalOpen(true);
-  };
-
-  const openEditModal = (p: Plan) => {
-    setEditingPlan(p);
-    setName(p.name);
-    setDescription(p.description);
-    setPriceMajor((p.priceMinorUnits / 100).toFixed(2));
-    setCurrency(p.currency);
-    setBillingInterval(p.billingInterval);
-    setTaxRatePercent(p.taxRatePercent);
-    setIsActive(p.isActive);
-    setIsModalOpen(true);
-  };
-
-  const handleSave = async (e: React.FormEvent) => {
+  const handleCreatePlan = (e: React.FormEvent) => {
     e.preventDefault();
-    try {
-      const priceMinorUnits = Math.round(parseFloat(priceMajor || '0') * 100);
+    if (!name.trim() || !basePrice) return;
 
-      if (editingPlan) {
-        await updatePlan(editingPlan.id, {
-          name,
-          description,
-          priceMinorUnits,
-          currency,
-          billingInterval,
-          taxRatePercent,
-          isActive,
-        });
-        addToast({
-          type: 'success',
-          title: 'Plan Updated',
-          message: `${name} catalog configuration updated.`,
-        });
-      } else {
-        await createPlan({
-          name,
-          description,
-          priceMinorUnits,
-          currency,
-          billingInterval,
-          taxRatePercent,
-          isActive,
-        });
-        addToast({
-          type: 'success',
-          title: 'Plan Created',
-          message: `${name} is now available for subscriptions.`,
-        });
-      }
+    const features = [feature1, feature2, feature3].filter((f) => f.trim().length > 0);
 
-      setIsModalOpen(false);
-      await loadData();
-    } catch (e: any) {
-      addToast({ type: 'error', title: 'Operation Failed', message: e.message });
-    }
-  };
+    addPlan({
+      name: name.trim(),
+      description: description.trim() || "Custom subscription tier",
+      billingInterval,
+      basePrice: parseFloat(basePrice) || 999,
+      includedSeats: parseInt(includedSeats) || 1,
+      perAdditionalSeatPrice: parseFloat(perAdditionalSeatPrice) || 0,
+      maxSeats: parseInt(maxSeats) || 50,
+      features: features.length > 0 ? features : ["Standard billing engine features", "Priority support"],
+      annualDiscountPercentage: billingInterval === "yearly" ? 20 : 0,
+    });
 
-  const handleToggleActive = async (p: Plan) => {
-    try {
-      await updatePlan(p.id, { isActive: !p.isActive });
-      addToast({
-        type: 'info',
-        title: p.isActive ? 'Plan Archived' : 'Plan Reactivated',
-        message: `${p.name} status updated.`,
-      });
-      await loadData();
-    } catch (e: any) {
-      addToast({ type: 'error', title: 'Action Failed', message: e.message });
-    }
+    setIsModalOpen(false);
+    setName("");
+    setDescription("");
+    setBasePrice("");
   };
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-300">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+    <div className="space-y-8">
+      {/* Page Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
+          <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-ivory-200 border border-border text-[10px] font-bold uppercase tracking-wider text-charcoal mb-1">
+            <span>Pricing Architecture</span>
+            <span>•</span>
+            <span className="font-mono">{plans.length} Tiers Configured</span>
+          </div>
+          <h2 className="text-xl lg:text-2xl font-bold tracking-tight text-charcoal">
             Subscription Plan Catalog
-          </h1>
-          <p className="text-xs text-slate-400 mt-1">
-            Standard pricing tiers, recurring intervals, and minor-unit base rates enforced by the Billing Integrity Guard.
+          </h2>
+          <p className="text-xs text-charcoal-soft mt-0.5">
+            Configure monthly & annual billing intervals, seat quotas, and statutory tax parameters
           </p>
         </div>
 
-        <button
-          onClick={openCreateModal}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold text-xs transition-colors shadow-lg shadow-emerald-500/20"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Create New Plan</span>
-        </button>
+        <div className="flex items-center gap-3">
+          <Button variant="gold" size="md" onClick={() => setIsModalOpen(true)} className="shadow-xs">
+            <svg className="w-4 h-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            Create New Plan
+          </Button>
+        </div>
       </div>
 
-      {/* Plans Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-        {plans.map((plan) => {
-          const subscriberCount = subscriptions.filter(
-            (s) => s.planId === plan.id && s.status === 'active'
-          ).length;
-
-          return (
-            <div
-              key={plan.id}
-              className={`bg-[#0e1524] border rounded-2xl p-6 transition-all shadow-lg flex flex-col justify-between ${
-                plan.isActive
-                  ? 'border-slate-800 hover:border-slate-700'
-                  : 'border-slate-800/40 opacity-60'
+      {/* Interval Selector Toggle */}
+      <div className="flex items-center justify-between p-3 rounded-xl bg-white border border-border shadow-xs">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold text-charcoal">Billing Cycle:</span>
+          <div className="flex items-center gap-1 bg-ivory-200 p-1 rounded-lg border border-border">
+            <button
+              onClick={() => setIntervalFilter("all")}
+              className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${
+                intervalFilter === "all"
+                  ? "bg-white text-charcoal shadow-xs font-semibold"
+                  : "text-charcoal-soft hover:text-charcoal"
               }`}
             >
+              All Tiers ({plans.length})
+            </button>
+            <button
+              onClick={() => setIntervalFilter("monthly")}
+              className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${
+                intervalFilter === "monthly"
+                  ? "bg-white text-charcoal shadow-xs font-semibold"
+                  : "text-charcoal-soft hover:text-charcoal"
+              }`}
+            >
+              Monthly Plans
+            </button>
+            <button
+              onClick={() => setIntervalFilter("yearly")}
+              className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${
+                intervalFilter === "yearly"
+                  ? "bg-white text-charcoal shadow-xs font-semibold"
+                  : "text-charcoal-soft hover:text-charcoal"
+              }`}
+            >
+              Annual Plans (Save 20%)
+            </button>
+          </div>
+        </div>
+
+        <span className="text-[11px] text-charcoal-soft hidden md:inline">
+          Tax Jurisdiction: <span className="font-semibold text-charcoal">GST 18% Compliant</span>
+        </span>
+      </div>
+
+      {/* Plan Cards Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        {filteredPlans.map((plan) => {
+          const isPro = plan.id === "plan-pro";
+
+          return (
+            <Card
+              key={plan.id}
+              hover
+              className={`flex flex-col justify-between relative ${
+                isPro ? "border-gold/60 ring-2 ring-gold/20 shadow-md bg-gradient-to-b from-white to-gold-50/20" : ""
+              }`}
+            >
+              {isPro && (
+                <div className="absolute top-0 right-0 transform translate-x-0 -translate-y-0">
+                  <span className="bg-gold text-charcoal text-[9px] font-bold uppercase tracking-wider px-3 py-1 rounded-bl-lg shadow-xs">
+                    Most Popular
+                  </span>
+                </div>
+              )}
+
               <div>
-                <div className="flex items-center justify-between">
-                  <span
-                    className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
-                      plan.isActive
-                        ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
-                        : 'bg-slate-800 text-slate-400 border border-slate-700'
-                    }`}
-                  >
-                    {plan.isActive ? 'Active Tier' : 'Archived'}
-                  </span>
-
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => openEditModal(plan)}
-                      className="p-1 rounded text-slate-400 hover:text-white transition-colors"
-                      title="Edit Plan"
-                    >
-                      <Edit2 className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={() => handleToggleActive(plan)}
-                      className="p-1 rounded text-slate-400 hover:text-amber-400 transition-colors"
-                      title={plan.isActive ? 'Archive Plan' : 'Reactivate Plan'}
-                    >
-                      <Archive className="w-3.5 h-3.5" />
-                    </button>
+                <CardHeader className="pb-4">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-lg">{plan.name}</CardTitle>
+                    <Badge variant={plan.billingInterval === "yearly" ? "gold" : "neutral"} size="sm">
+                      {plan.billingInterval === "yearly" ? "Yearly" : "Monthly"}
+                    </Badge>
                   </div>
-                </div>
-
-                <div className="mt-4">
-                  <h3 className="font-bold text-white text-lg tracking-tight">{plan.name}</h3>
-                  <p className="text-xs text-slate-400 mt-1 leading-relaxed min-h-[36px]">
+                  <CardDescription className="line-clamp-2 min-h-[32px]">
                     {plan.description}
-                  </p>
-                </div>
+                  </CardDescription>
 
-                <div className="mt-4 pt-4 border-t border-slate-800">
-                  <div className="flex items-baseline gap-1">
-                    <span className="text-3xl font-extrabold text-white font-mono">
-                      {formatMinorUnits(plan.priceMinorUnits, plan.currency)}
-                    </span>
-                    <span className="text-xs text-slate-400 capitalize">
-                      / {plan.billingInterval}
+                  {/* Price */}
+                  <div className="pt-4 pb-2 border-b border-border/60">
+                    <div className="flex items-baseline gap-1">
+                      <span className="text-2xl font-bold font-mono text-charcoal">
+                        {formatINR(plan.basePrice, { minimumFractionDigits: 0 })}
+                      </span>
+                      <span className="text-xs text-charcoal-soft">
+                        /{plan.billingInterval === "yearly" ? "yr" : "mo"}
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-charcoal-soft block mt-0.5">
+                      Includes {plan.includedSeats} team seats
                     </span>
                   </div>
-                  <div className="text-[11px] text-slate-400 mt-1">
-                    Minor units: {plan.priceMinorUnits.toLocaleString()} cents • Tax: {plan.taxRatePercent}%
+                </CardHeader>
+
+                <CardContent className="space-y-4 pt-2">
+                  {/* Capacity Specs */}
+                  <div className="p-2.5 rounded-lg bg-surface-muted border border-border/80 text-[11px] space-y-1">
+                    <div className="flex justify-between">
+                      <span className="text-charcoal-soft">Seat Capacity:</span>
+                      <span className="font-semibold text-charcoal font-mono">Up to {plan.maxSeats}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-charcoal-soft">Add-on Seat Rate:</span>
+                      <span className="font-semibold text-charcoal font-mono">{formatINR(plan.perAdditionalSeatPrice, { minimumFractionDigits: 0 })}/seat</span>
+                    </div>
                   </div>
-                </div>
+
+                  {/* Feature List */}
+                  <div>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-charcoal-soft block mb-2">
+                      Features Included:
+                    </span>
+                    <ul className="space-y-1.5 text-xs text-charcoal">
+                      {plan.features.map((feature, idx) => (
+                        <li key={idx} className="flex items-start gap-2">
+                          <svg className="w-4 h-4 text-integrity-passed shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                          </svg>
+                          <span className="text-[11px] text-charcoal-muted leading-tight">{feature}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </CardContent>
               </div>
 
-              <div className="mt-6 pt-4 border-t border-slate-800/80 flex items-center justify-between text-xs">
-                <span className="text-slate-400 flex items-center gap-1.5">
-                  <Layers className="w-3.5 h-3.5 text-slate-500" />
-                  <span>
-                    <strong className="text-white">{subscriberCount}</strong> active
-                  </span>
-                </span>
-                <span className="text-slate-400 uppercase font-mono text-[10px]">
-                  {plan.currency}
-                </span>
-              </div>
-            </div>
+              <CardFooter className="pt-4">
+                <Button
+                  variant={isPro ? "gold" : "outline"}
+                  size="sm"
+                  className="w-full"
+                  onClick={() => router.push(`/subscriptions?planId=${plan.id}`)}
+                >
+                  Assign to Customer →
+                </Button>
+              </CardFooter>
+            </Card>
           );
         })}
       </div>
 
-      {/* Modal: Create or Edit Plan */}
+      {/* Create Plan Modal */}
       <Modal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        title={editingPlan ? 'Edit Plan Definition' : 'Create New Plan'}
-        description="Set standard prices using minor-unit integer arithmetic to prevent floating-point drift."
+        title="Create New Subscription Plan"
+        description="Add a new subscription tier with seat allotments and pricing schedules"
+        footer={
+          <div className="flex items-center justify-end gap-2">
+            <Button variant="outline" size="sm" onClick={() => setIsModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="gold" size="sm" onClick={handleCreatePlan}>
+              Publish Plan
+            </Button>
+          </div>
+        }
       >
-        <form onSubmit={handleSave} className="space-y-4 text-xs">
-          <div>
-            <label className="block font-semibold text-slate-400 mb-1">Plan Name *</label>
-            <input
-              type="text"
-              placeholder="e.g. Enterprise Shield"
+        <form onSubmit={handleCreatePlan} className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Input
+              label="Plan Name"
+              placeholder="e.g. Developer Pro"
               value={name}
               onChange={(e) => setName(e.target.value)}
               required
-              className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
+            />
+            <Select
+              label="Billing Interval"
+              value={billingInterval}
+              onChange={(e) => setBillingInterval(e.target.value as BillingInterval)}
+              options={[
+                { value: "monthly", label: "Monthly Recurring" },
+                { value: "yearly", label: "Yearly Recurring (Annual)" },
+              ]}
             />
           </div>
 
-          <div>
-            <label className="block font-semibold text-slate-400 mb-1">Description</label>
-            <textarea
-              placeholder="Features and target audience..."
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={2}
-              className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
+          <Input
+            label="Description"
+            placeholder="Brief tier summary"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+          />
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <Input
+              label="Base Price (₹)"
+              type="number"
+              placeholder="2499"
+              value={basePrice}
+              onChange={(e) => setBasePrice(e.target.value)}
+              required
+            />
+            <Input
+              label="Included Seats"
+              type="number"
+              placeholder="5"
+              value={includedSeats}
+              onChange={(e) => setIncludedSeats(e.target.value)}
+            />
+            <Input
+              label="Max Seats Allowed"
+              type="number"
+              placeholder="25"
+              value={maxSeats}
+              onChange={(e) => setMaxSeats(e.target.value)}
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block font-semibold text-slate-400 mb-1">
-                Standard Price ($) *
-              </label>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={priceMajor}
-                onChange={(e) => setPriceMajor(e.target.value)}
-                required
-                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-sm"
-              />
-              <div className="text-[10px] text-slate-500 mt-1">
-                Stored as: {Math.round(parseFloat(priceMajor || '0') * 100)} minor cents
-              </div>
-            </div>
-
-            <div>
-              <label className="block font-semibold text-slate-400 mb-1">Currency</label>
-              <select
-                value={currency}
-                onChange={(e) => setCurrency(e.target.value as Currency)}
-                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
-              >
-                <option value="USD">USD ($)</option>
-                <option value="EUR">EUR (€)</option>
-                <option value="GBP">GBP (£)</option>
-                <option value="INR">INR (₹)</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block font-semibold text-slate-400 mb-1">
-                Billing Interval
-              </label>
-              <select
-                value={billingInterval}
-                onChange={(e) => setBillingInterval(e.target.value as BillingInterval)}
-                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 capitalize"
-              >
-                <option value="monthly">Monthly</option>
-                <option value="quarterly">Quarterly</option>
-                <option value="yearly">Yearly</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block font-semibold text-slate-400 mb-1">
-                Default Tax Rate (%)
-              </label>
-              <input
-                type="number"
-                min="0"
-                value={taxRatePercent}
-                onChange={(e) => setTaxRatePercent(parseFloat(e.target.value) || 0)}
-                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
-              />
-            </div>
-          </div>
-
-          <div className="pt-2 flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="isActiveCheck"
-              checked={isActive}
-              onChange={(e) => setIsActive(e.target.checked)}
-              className="accent-emerald-500 rounded"
-            />
-            <label htmlFor="isActiveCheck" className="text-slate-300 font-medium">
-              Active plan available for new subscriber subscriptions
+          <div className="space-y-2">
+            <label className="block text-xs font-semibold uppercase tracking-wider text-charcoal-muted">
+              Key Features (Up to 3)
             </label>
-          </div>
-
-          <div className="pt-4 flex justify-end gap-2 border-t border-slate-800">
-            <button
-              type="button"
-              onClick={() => setIsModalOpen(false)}
-              className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold"
-            >
-              {editingPlan ? 'Save Plan' : 'Create Plan'}
-            </button>
+            <Input
+              placeholder="Feature 1: e.g. Real-time billing audit"
+              value={feature1}
+              onChange={(e) => setFeature1(e.target.value)}
+            />
+            <Input
+              placeholder="Feature 2: e.g. Dedicated invoice portal"
+              value={feature2}
+              onChange={(e) => setFeature2(e.target.value)}
+            />
+            <Input
+              placeholder="Feature 3: e.g. 24/7 SLA"
+              value={feature3}
+              onChange={(e) => setFeature3(e.target.value)}
+            />
           </div>
         </form>
       </Modal>
     </div>
   );
 }
-

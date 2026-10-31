@@ -1,196 +1,142 @@
-export type Currency = 'USD' | 'EUR' | 'INR' | 'GBP';
+/**
+ * SUBSYNC — Core Domain Types
+ */
 
-export type BillingInterval = 'monthly' | 'quarterly' | 'yearly';
-
-export type SubscriptionStatus =
-  | 'trialing'
-  | 'active'
-  | 'paused'
-  | 'past_due'
-  | 'cancelled'
-  | 'expired';
-
-export type InvoiceStatus =
-  | 'draft'
-  | 'issued'
-  | 'partially_paid'
-  | 'paid'
-  | 'overdue'
-  | 'cancelled';
-
-export type PaymentMethod =
-  | 'card'
-  | 'upi'
-  | 'bank_transfer'
-  | 'cash'
-  | 'other';
-
-export type IntegritySeverity = 'CRITICAL' | 'WARNING' | 'INFORMATION';
-
-export type IntegrityOverallStatus = 'VALIDATED' | 'REVIEW_REQUIRED' | 'BLOCKED';
-
-export interface IntegrityIssue {
-  id: string;
-  code: string;
-  severity: IntegritySeverity;
-  title: string;
-  message: string;
-  affectedEntity: {
-    type: 'subscription' | 'invoice' | 'customer' | 'plan';
-    id: string;
-    label?: string;
-  };
-  recommendation: string;
-}
-
-export interface IntegrityCheckResult {
-  status: IntegrityOverallStatus;
-  canProceed: boolean;
-  issues: IntegrityIssue[];
-  checkedAt: string;
-}
+export type SubscriptionStatus = "Active" | "Paused" | "Canceled" | "Pending Review";
+export type CustomerStatus = "Active" | "Inactive" | "Suspended";
+export type BillingInterval = "monthly" | "yearly";
+export type InvoiceStatus = "Draft" | "Issued" | "Paid" | "Overdue";
+export type PaymentStatus = "Paid" | "Pending" | "Failed";
+export type PaymentMethod = "UPI" | "Net Banking" | "Credit Card" | "Bank Transfer";
+export type IntegritySeverity = "Passed" | "Warning" | "Critical";
 
 export interface Customer {
   id: string;
-  orgId: string;
   name: string;
   email: string;
+  phone: string;
   company: string;
-  phone?: string;
-  billingAddress?: {
-    line1: string;
-    city: string;
-    state: string;
-    postalCode: string;
-    country: string;
-  };
-  taxId?: string;
+  status: CustomerStatus;
+  gstin?: string;
+  address?: string;
   createdAt: string;
-  updatedAt: string;
+  totalInvoiced: number;
+  activeSubscriptionsCount: number;
 }
 
 export interface Plan {
   id: string;
-  orgId: string;
   name: string;
   description: string;
-  // Monetary values stored in minor units (e.g. 4900 for $49.00)
-  priceMinorUnits: number;
-  currency: Currency;
   billingInterval: BillingInterval;
-  taxRatePercent: number; // e.g. 18 for 18%
-  isActive: boolean;
-  createdAt: string;
+  basePrice: number;
+  includedSeats: number;
+  perAdditionalSeatPrice: number;
+  maxSeats: number;
+  features: string[];
+  annualDiscountPercentage: number;
 }
 
 export interface Subscription {
   id: string;
-  orgId: string;
   customerId: string;
+  customerName?: string;
   planId: string;
+  planName?: string;
   status: SubscriptionStatus;
-  quantity: number;
-  startDate: string; // ISO string YYYY-MM-DD
-  currentPeriodStart: string;
-  currentPeriodEnd: string;
-  nextBillingDate: string;
-  discountPercent?: number; // e.g. 10 for 10% off
+  seats: number;
+  unitPrice: number;
+  discountCode?: string;
+  discountPercentage: number;
   discountExpiresAt?: string;
-  cancelReason?: string;
-  pausedAt?: string;
-  createdAt: string;
-  updatedAt: string;
+  billingPeriodStart: string;
+  billingPeriodEnd: string;
+  renewalDate: string;
+  taxRatePercentage: number;
+  lastAuditedAt?: string;
+  integrityStatus: IntegritySeverity;
+  integrityNotes?: string;
 }
 
 export interface InvoiceLineItem {
   id: string;
   description: string;
   quantity: number;
-  unitPriceMinorUnits: number;
-  subtotalMinorUnits: number;
+  unitPrice: number;
+  amount: number;
+  type: "base" | "seats" | "discount" | "tax" | "proration";
 }
 
-export interface InvoicePassport {
-  invoiceId: string;
-  subscriptionId?: string;
-  customerId: string;
-  issuedAt: string;
-  periodStart: string;
-  periodEnd: string;
-  planName: string;
-  unitPriceMinorUnits: number;
-  quantity: number;
-  baseAmountMinorUnits: number;
-  discountPercent: number;
-  discountMinorUnits: number;
-  taxableAmountMinorUnits: number;
-  taxRatePercent: number;
-  taxMinorUnits: number;
-  totalMinorUnits: number;
-  integritySnapshot: {
-    status: IntegrityOverallStatus;
-    checkedIssuesCount: number;
-    validatedAt: string;
-    hash: string;
-  };
+export interface CalculationSnapshot {
+  formula: string;
+  basePrice: number;
+  seats: number;
+  subtotal: number;
+  discountCode?: string;
+  discountAmount: number;
+  taxableAmount: number;
+  gstRate: number;
+  cgst: number;
+  sgst: number;
+  prorationDays?: number;
+  finalAmount: number;
+  timestamp: string;
+  explanation: string;
 }
 
 export interface Invoice {
   id: string;
-  orgId: string;
   invoiceNumber: string;
   customerId: string;
-  subscriptionId?: string;
-  status: InvoiceStatus;
+  customerName: string;
+  subscriptionId: string;
+  planName: string;
+  issueDate: string;
+  dueDate: string;
   billingPeriodStart: string;
   billingPeriodEnd: string;
-  currency: Currency;
+  subtotal: number;
+  discountTotal: number;
+  taxTotal: number;
+  totalAmount: number;
+  status: InvoiceStatus;
   lineItems: InvoiceLineItem[];
-  subtotalMinorUnits: number;
-  discountMinorUnits: number;
-  taxMinorUnits: number;
-  totalMinorUnits: number;
-  amountPaidMinorUnits: number;
-  balanceDueMinorUnits: number;
-  dueDate: string;
-  issuedDate: string;
-  passport?: InvoicePassport;
-  notes?: string;
-  createdAt: string;
-  updatedAt: string;
+  calculationSnapshot: CalculationSnapshot;
 }
 
 export interface Payment {
   id: string;
-  orgId: string;
   invoiceId: string;
+  invoiceNumber: string;
   customerId: string;
-  amountMinorUnits: number;
-  currency: Currency;
+  customerName: string;
+  amount: number;
   paymentMethod: PaymentMethod;
-  referenceNumber: string;
-  isSimulated: boolean;
-  status: 'succeeded' | 'pending' | 'failed';
-  recordedAt: string;
-  notes?: string;
-}
-
-export interface ActivityLog {
-  id: string;
-  orgId: string;
-  action: string;
-  entityType: 'subscription' | 'invoice' | 'customer' | 'plan' | 'payment' | 'integrity_guard';
-  entityId: string;
-  description: string;
+  status: PaymentStatus;
   timestamp: string;
-  metadata?: Record<string, any>;
+  transactionReference: string;
 }
 
-export interface Organization {
-  id: string;
-  name: string;
-  currency: Currency;
-  taxRatePercent: number;
-  taxIdentifier?: string;
+export interface IntegrityCheckResult {
+  ruleId: string;
+  ruleName: string;
+  severity: IntegritySeverity;
+  message: string;
+  explanation: string;
+  suggestedRemediation: string;
+  subscriptionId: string;
+  customerId: string;
+  canAutoFix: boolean;
+}
+
+export interface SystemSettings {
+  businessName: string;
+  businessAddress: string;
+  gstin: string;
+  supportEmail: string;
+  currency: string;
+  currencySymbol: string;
+  defaultGstRate: number;
+  integrityStrictness: "Standard" | "Strict" | "Lenient";
 }
 

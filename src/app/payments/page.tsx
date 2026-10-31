@@ -1,368 +1,260 @@
-'use client';
+"use client";
 
-import React, { useState, useEffect } from 'react';
-import {
-  DollarSign,
-  Plus,
-  Search,
-  CheckCircle2,
-  Clock,
-  ShieldCheck,
-  CreditCard,
-  Building2,
-  ExternalLink,
-} from 'lucide-react';
-import { getPayments, getInvoices, getCustomers, recordPayment } from '@/lib/repository';
-import { formatMinorUnits } from '@/lib/billing-engine';
-import { Payment, Invoice, Customer, PaymentMethod } from '@/types';
-import { Badge } from '@/components/Badge';
-import { Modal } from '@/components/Modal';
-import { useToast } from '@/components/ToastProvider';
+import React, { useState } from "react";
+import { useApp } from "@/context/app-context";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { formatINR, formatDate } from "@/lib/utils";
+import { Payment, PaymentStatus } from "@/types";
+import Link from "next/link";
+
+const METHOD_ICONS: Record<string, string> = {
+  UPI: "🔵",
+  "Net Banking": "🏦",
+  "Credit Card": "💳",
+  "Bank Transfer": "🏧",
+};
+
+function StatusBadge({ status }: { status: PaymentStatus }) {
+  if (status === "Paid") return <Badge variant="passed" dot>Paid</Badge>;
+  if (status === "Pending") return <Badge variant="warning" dot>Pending</Badge>;
+  return <Badge variant="critical" dot>Failed</Badge>;
+}
 
 export default function PaymentsPage() {
-  const { addToast } = useToast();
-  const [payments, setPayments] = useState<Payment[]>([]);
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
+  const { payments, invoices, updatePaymentStatus } = useApp();
 
-  // Modal State
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [selectedInvoiceId, setSelectedInvoiceId] = useState('');
-  const [amountMajor, setAmountMajor] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('card');
-  const [refNumber, setRefNumber] = useState('');
-  const [notes, setNotes] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<string>("All");
+  const [togglingId, setTogglingId] = useState<string | null>(null);
 
-  const loadData = async () => {
-    try {
-      const [pays, invs, custs] = await Promise.all([
-        getPayments(),
-        getInvoices(),
-        getCustomers(),
-      ]);
-      setPayments(pays);
-      setInvoices(invs);
-      setCustomers(custs);
+  // KPI calculations
+  const totalCollected = payments
+    .filter((p) => p.status === "Paid")
+    .reduce((sum, p) => sum + p.amount, 0);
+  const pendingTotal = payments
+    .filter((p) => p.status === "Pending")
+    .reduce((sum, p) => sum + p.amount, 0);
+  const failedTotal = payments
+    .filter((p) => p.status === "Failed")
+    .reduce((sum, p) => sum + p.amount, 0);
 
-      // Default to first invoice with balance due
-      const unpaid = invs.find((i) => i.balanceDueMinorUnits > 0);
-      if (unpaid) {
-        setSelectedInvoiceId(unpaid.id);
-        setAmountMajor((unpaid.balanceDueMinorUnits / 100).toFixed(2));
-      }
-    } finally {
-      setLoading(false);
-    }
+  const filtered =
+    statusFilter === "All"
+      ? payments
+      : payments.filter((p) => p.status === statusFilter);
+
+  /** Demo toggle: cycles Pending → Paid → Failed → Pending */
+  const handleStatusToggle = (payment: Payment) => {
+    setTogglingId(payment.id);
+    const next: PaymentStatus =
+      payment.status === "Pending" ? "Paid"
+      : payment.status === "Paid" ? "Failed"
+      : "Pending";
+    setTimeout(() => {
+      updatePaymentStatus(payment.id, next);
+      setTogglingId(null);
+    }, 400);
   };
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const openRecordModal = () => {
-    const unpaid = invoices.find((i) => i.balanceDueMinorUnits > 0) || invoices[0];
-    if (unpaid) {
-      setSelectedInvoiceId(unpaid.id);
-      setAmountMajor((unpaid.balanceDueMinorUnits / 100).toFixed(2));
-    }
-    setRefNumber(`TXN-SIM-${Date.now().toString().slice(-6)}`);
-    setNotes('');
-    setIsModalOpen(true);
-  };
-
-  const handleInvoiceChange = (id: string) => {
-    setSelectedInvoiceId(id);
-    const target = invoices.find((i) => i.id === id);
-    if (target) {
-      setAmountMajor((target.balanceDueMinorUnits / 100).toFixed(2));
-    }
-  };
-
-  const handleRecordSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedInvoiceId) return;
-
-    const targetInv = invoices.find((i) => i.id === selectedInvoiceId);
-    if (!targetInv) return;
-
-    const amountMinor = Math.round(parseFloat(amountMajor || '0') * 100);
-
-    // Overpayment check
-    if (amountMinor > targetInv.balanceDueMinorUnits) {
-      addToast({
-        type: 'error',
-        title: 'Overpayment Blocked',
-        message: `Entered amount ($${(amountMinor / 100).toFixed(2)}) exceeds balance due of $${(targetInv.balanceDueMinorUnits / 100).toFixed(2)}.`,
-      });
-      return;
-    }
-
-    setIsSubmitting(true);
-    try {
-      await recordPayment({
-        invoiceId: targetInv.id,
-        amountMinorUnits: amountMinor,
-        paymentMethod,
-        referenceNumber: refNumber,
-        notes,
-      });
-
-      addToast({
-        type: 'success',
-        title: 'Payment Recorded',
-        message: `Processed ${formatMinorUnits(amountMinor, targetInv.currency)} for ${targetInv.invoiceNumber}.`,
-      });
-
-      setIsModalOpen(false);
-      await loadData();
-    } catch (e: any) {
-      addToast({ type: 'error', title: 'Payment Failed', message: e.message });
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const filteredPayments = payments.filter((p) => {
-    if (!searchQuery.trim()) return true;
-    const q = searchQuery.toLowerCase();
-    const cust = customers.find((c) => c.id === p.customerId);
-    const inv = invoices.find((i) => i.id === p.invoiceId);
-    return (
-      p.referenceNumber.toLowerCase().includes(q) ||
-      p.paymentMethod.toLowerCase().includes(q) ||
-      (cust && cust.company.toLowerCase().includes(q)) ||
-      (inv && inv.invoiceNumber.toLowerCase().includes(q))
-    );
-  });
-
-  const selectedTargetInvoice = invoices.find((i) => i.id === selectedInvoiceId);
+  const getLinkedInvoice = (invoiceId: string) =>
+    invoices.find((inv) => inv.id === invoiceId);
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-300">
+    <div className="space-y-8">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
-            Payment Records & Ledger
-          </h1>
-          <p className="text-xs text-slate-400 mt-1">
-            Reconciliation records, payment method breakdowns, and strict financial overpayment barriers.
+          <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-ivory-200 border border-border text-[10px] font-bold uppercase tracking-wider text-charcoal mb-1">
+            <span>Payment Ledger</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-gold" />
+            <span>Demo Mode</span>
+          </div>
+          <h2 className="text-xl lg:text-2xl font-bold tracking-tight text-charcoal">Payments</h2>
+          <p className="text-xs text-charcoal-soft mt-0.5">
+            Payment records linked to invoices. Toggle status to simulate payment outcomes.
           </p>
         </div>
-
-        <button
-          onClick={openRecordModal}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold text-xs transition-colors shadow-lg shadow-emerald-500/20"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Record Demo Payment</span>
-        </button>
       </div>
 
-      {/* Search Bar */}
-      <div className="relative max-w-md w-full">
-        <Search className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
-        <input
-          type="text"
-          placeholder="Search by reference, method, or invoice number..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full bg-[#0e1524] border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
-        />
+      {/* Demo Notice */}
+      <div className="flex items-center gap-3 p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs">
+        <svg className="w-4 h-4 text-amber-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        <span className="font-semibold text-amber-700">Demo Mode</span>
+        <span className="text-charcoal-soft">
+          — No real payment gateway is connected. Click the status badge on any row to cycle between Paid / Pending / Failed states and observe linked invoice updates.
+        </span>
+      </div>
+
+      {/* KPI Strip */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-charcoal-muted mb-1">Total Collected</div>
+            <div className="text-xl font-bold font-mono text-integrity-passed tabular-nums">{formatINR(totalCollected)}</div>
+            <div className="text-xs text-charcoal-soft mt-0.5">
+              {payments.filter((p) => p.status === "Paid").length} successful transactions
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-charcoal-muted mb-1">Pending</div>
+            <div className="text-xl font-bold font-mono text-amber-600 tabular-nums">{formatINR(pendingTotal)}</div>
+            <div className="text-xs text-charcoal-soft mt-0.5">
+              {payments.filter((p) => p.status === "Pending").length} awaiting clearance
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-charcoal-muted mb-1">Failed</div>
+            <div className="text-xl font-bold font-mono text-integrity-critical tabular-nums">{formatINR(failedTotal)}</div>
+            <div className="text-xs text-charcoal-soft mt-0.5">
+              {payments.filter((p) => p.status === "Failed").length} failed transactions
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Payments Table */}
-      <div className="bg-[#0e1524] border border-slate-800 rounded-2xl shadow-xl overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead>
-              <tr className="border-b border-slate-800 text-slate-400 uppercase tracking-wider bg-slate-900/40">
-                <th className="py-3.5 px-4">Transaction Reference</th>
-                <th className="py-3.5 px-4">Customer</th>
-                <th className="py-3.5 px-4">Linked Invoice</th>
-                <th className="py-3.5 px-4">Method</th>
-                <th className="py-3.5 px-4">Amount</th>
-                <th className="py-3.5 px-4">Status & Simulation</th>
-                <th className="py-3.5 px-4 text-right">Recorded Date</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/60 text-slate-300">
-              {filteredPayments.length > 0 ? (
-                filteredPayments.map((p) => {
-                  const cust = customers.find((c) => c.id === p.customerId);
-                  const inv = invoices.find((i) => i.id === p.invoiceId);
+      <Card>
+        <CardContent className="p-0">
+          {/* Filter bar */}
+          <div className="flex items-center gap-2 p-4 border-b border-border flex-wrap">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-charcoal-muted mr-1">Status:</span>
+            {(["All", "Paid", "Pending", "Failed"] as const).map((s) => (
+              <button
+                key={s}
+                onClick={() => setStatusFilter(s)}
+                className={`px-3 py-1 rounded-full text-xs font-semibold border transition-colors ${
+                  statusFilter === s
+                    ? "bg-charcoal text-ivory-50 border-charcoal"
+                    : "bg-transparent text-charcoal-soft border-border hover:border-charcoal-light hover:text-charcoal"
+                }`}
+              >
+                {s}
+                {s !== "All" && (
+                  <span className="ml-1 opacity-60">({payments.filter((p) => p.status === s).length})</span>
+                )}
+              </button>
+            ))}
+            <span className="ml-auto text-xs text-charcoal-muted">
+              {filtered.length} of {payments.length} records
+            </span>
+          </div>
 
-                  return (
-                    <tr key={p.id} className="hover:bg-slate-800/30 transition-colors">
-                      <td className="py-4 px-4 font-mono font-medium text-white">
-                        {p.referenceNumber}
-                        {p.notes && (
-                          <div className="text-[10px] text-slate-400 font-sans mt-0.5 truncate max-w-xs">
-                            {p.notes}
-                          </div>
-                        )}
-                      </td>
+          {filtered.length === 0 ? (
+            <div className="p-12 text-center">
+              <p className="text-sm text-charcoal-soft">No payment records match this filter.</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-border">
+                    {["Transaction Ref", "Invoice", "Customer", "Method", "Amount", "Date", "Status", "Action"].map((col) => (
+                      <th key={col} className="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-charcoal-muted whitespace-nowrap">
+                        {col}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((payment) => {
+                    const linkedInv = getLinkedInvoice(payment.invoiceId);
+                    const isToggling = togglingId === payment.id;
+                    return (
+                      <tr key={payment.id} className="border-b border-border last:border-0 hover:bg-surface-muted transition-colors">
+                        {/* Transaction Ref */}
+                        <td className="px-4 py-3">
+                          <span className="font-mono text-xs text-charcoal-soft">{payment.transactionReference}</span>
+                        </td>
 
-                      <td className="py-4 px-4">
-                        <div className="font-semibold text-slate-200">
-                          {cust?.company || cust?.name || 'Customer'}
-                        </div>
-                      </td>
-
-                      <td className="py-4 px-4 font-mono text-emerald-400">
-                        {inv?.invoiceNumber || p.invoiceId}
-                      </td>
-
-                      <td className="py-4 px-4 uppercase font-semibold text-slate-300">
-                        {p.paymentMethod.replace('_', ' ')}
-                      </td>
-
-                      <td className="py-4 px-4 font-mono font-bold text-white">
-                        {formatMinorUnits(p.amountMinorUnits, p.currency)}
-                      </td>
-
-                      <td className="py-4 px-4">
-                        <div className="flex items-center gap-1.5">
-                          <Badge status={p.status} size="sm" />
-                          {p.isSimulated && (
-                            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
-                              Simulated
-                            </span>
+                        {/* Invoice */}
+                        <td className="px-4 py-3">
+                          {linkedInv ? (
+                            <Link href={`/invoice-passport?invoiceId=${linkedInv.id}`}>
+                              <span className="text-xs font-semibold text-charcoal hover:text-gold transition-colors cursor-pointer underline-offset-2 hover:underline">
+                                {payment.invoiceNumber}
+                              </span>
+                            </Link>
+                          ) : (
+                            <span className="text-xs text-charcoal">{payment.invoiceNumber}</span>
                           )}
-                        </div>
-                      </td>
+                        </td>
 
-                      <td className="py-4 px-4 text-right text-slate-400 text-[11px]">
-                        {new Date(p.recordedAt).toLocaleString([], {
-                          dateStyle: 'medium',
-                          timeStyle: 'short',
-                        })}
-                      </td>
-                    </tr>
-                  );
-                })
-              ) : (
-                <tr>
-                  <td colSpan={7} className="py-12 text-center text-slate-500">
-                    No payment records match criteria.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+                        {/* Customer */}
+                        <td className="px-4 py-3">
+                          <span className="text-sm text-charcoal font-medium">{payment.customerName}</span>
+                        </td>
+
+                        {/* Method */}
+                        <td className="px-4 py-3">
+                          <span className="text-xs text-charcoal-soft">
+                            {METHOD_ICONS[payment.paymentMethod] || "💰"} {payment.paymentMethod}
+                          </span>
+                        </td>
+
+                        {/* Amount */}
+                        <td className="px-4 py-3">
+                          <span className="font-mono font-bold text-sm text-charcoal tabular-nums">
+                            {formatINR(payment.amount)}
+                          </span>
+                        </td>
+
+                        {/* Date */}
+                        <td className="px-4 py-3">
+                          <span className="text-xs text-charcoal-soft whitespace-nowrap">
+                            {new Date(payment.timestamp).toLocaleDateString("en-IN", {
+                              day: "2-digit", month: "short", year: "numeric",
+                            })}
+                          </span>
+                        </td>
+
+                        {/* Status */}
+                        <td className="px-4 py-3">
+                          <StatusBadge status={payment.status} />
+                        </td>
+
+                        {/* Action */}
+                        <td className="px-4 py-3">
+                          <button
+                            onClick={() => handleStatusToggle(payment)}
+                            disabled={isToggling}
+                            className={`px-2.5 py-1 rounded text-[11px] font-semibold border transition-all ${
+                              isToggling
+                                ? "opacity-50 cursor-not-allowed bg-border text-charcoal-muted border-border"
+                                : "bg-ivory-200 text-charcoal border-border hover:bg-ivory-300 hover:border-charcoal-light cursor-pointer"
+                            }`}
+                          >
+                            {isToggling ? "…" : "Toggle Status"}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Go to Invoices CTA */}
+      <div className="flex items-center justify-between p-4 rounded-xl bg-ivory-200 border border-border">
+        <div>
+          <div className="text-sm font-semibold text-charcoal">Need to generate a new payment record?</div>
+          <div className="text-xs text-charcoal-soft mt-0.5">
+            Generate an invoice first, then it will appear here for payment tracking.
+          </div>
         </div>
+        <Link href="/invoices">
+          <Button variant="gold" size="sm">Go to Invoices →</Button>
+        </Link>
       </div>
-
-      {/* Modal: Record Payment */}
-      <Modal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        title="Record Manual / Demo Payment"
-        description="Links to existing invoice and updates remaining balance with overpayment prevention."
-      >
-        <form onSubmit={handleRecordSubmit} className="space-y-4 text-xs">
-          <div>
-            <label className="block font-semibold text-slate-400 mb-1">Target Invoice *</label>
-            <select
-              value={selectedInvoiceId}
-              onChange={(e) => handleInvoiceChange(e.target.value)}
-              required
-              className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
-            >
-              {invoices.map((inv) => {
-                const c = customers.find((cust) => cust.id === inv.customerId);
-                return (
-                  <option key={inv.id} value={inv.id}>
-                    {inv.invoiceNumber} — {c?.company} (Balance: ${(inv.balanceDueMinorUnits / 100).toFixed(2)})
-                  </option>
-                );
-              })}
-            </select>
-            {selectedTargetInvoice && (
-              <div className="mt-1 text-[11px] text-slate-400 flex justify-between">
-                <span>Total: ${(selectedTargetInvoice.totalMinorUnits / 100).toFixed(2)}</span>
-                <span className="text-rose-400 font-semibold">
-                  Outstanding: ${(selectedTargetInvoice.balanceDueMinorUnits / 100).toFixed(2)}
-                </span>
-              </div>
-            )}
-          </div>
-
-          <div>
-            <label className="block font-semibold text-slate-400 mb-1">Payment Amount ($) *</label>
-            <input
-              type="number"
-              step="0.01"
-              min="0.01"
-              max={selectedTargetInvoice ? (selectedTargetInvoice.balanceDueMinorUnits / 100).toFixed(2) : undefined}
-              value={amountMajor}
-              onChange={(e) => setAmountMajor(e.target.value)}
-              required
-              className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono text-sm"
-            />
-          </div>
-
-          <div>
-            <label className="block font-semibold text-slate-400 mb-1">Payment Method</label>
-            <select
-              value={paymentMethod}
-              onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}
-              className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
-            >
-              <option value="card">Credit / Debit Card</option>
-              <option value="upi">UPI (Unified Payments Interface)</option>
-              <option value="bank_transfer">Corporate Wire / ACH</option>
-              <option value="cash">Direct Cash / Cheque</option>
-              <option value="other">Other</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block font-semibold text-slate-400 mb-1">
-              Reference / Transaction ID *
-            </label>
-            <input
-              type="text"
-              value={refNumber}
-              onChange={(e) => setRefNumber(e.target.value)}
-              required
-              className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono"
-            />
-          </div>
-
-          <div>
-            <label className="block font-semibold text-slate-400 mb-1">Notes</label>
-            <input
-              type="text"
-              placeholder="e.g. Bank approval code 99281"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
-            />
-          </div>
-
-          <div className="pt-4 flex justify-end gap-2 border-t border-slate-800">
-            <button
-              type="button"
-              onClick={() => setIsModalOpen(false)}
-              className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold"
-            >
-              {isSubmitting ? 'Recording...' : 'Record Payment'}
-            </button>
-          </div>
-        </form>
-      </Modal>
     </div>
   );
 }
-
